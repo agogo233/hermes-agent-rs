@@ -1,0 +1,47 @@
+# ----- Chef stage (dependency caching) -----
+FROM rust:1.86-bookworm AS chef
+RUN cargo install cargo-chef --locked
+WORKDIR /app
+
+# ----- Plan stage -----
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY crates crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ----- Build stage -----
+FROM chef AS builder
+ARG CARGO_NET_RETRY=3
+
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+COPY Cargo.toml Cargo.lock ./
+COPY crates crates
+RUN cargo build --release -p hermes-cli \
+    && strip /app/target/release/hermes
+
+# ----- Runtime stage -----
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash hermes
+
+COPY --from=builder /app/target/release/hermes /usr/local/bin/hermes
+
+LABEL org.opencontainers.image.source="https://github.com/nousresearch/hermes-engine" \
+      org.opencontainers.image.description="Hermes Agent - AI agent runtime" \
+      org.opencontainers.image.licenses="MIT"
+
+USER hermes
+ENV HERMES_HOME=/data
+VOLUME ["/data"]
+
+HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
+    CMD hermes doctor || exit 1
+
+ENTRYPOINT ["hermes"]

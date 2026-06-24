@@ -1,24 +1,54 @@
-# ----- Chef stage (dependency caching) -----
-FROM rust:1.86-bookworm AS chef
-RUN cargo install cargo-chef --locked
+# ----- Dependency cache stage -----
+FROM rust:1.86-bookworm AS deps
+ARG CARGO_NET_RETRY=3
 WORKDIR /app
 
-# ----- Plan stage -----
-FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
-RUN cargo chef prepare --recipe-path recipe.json
+
+# Create dummy source files for all workspace crates so cargo can resolve & compile deps
+RUN mkdir -p \
+      crates/hermes-acp/src \
+      crates/hermes-agent/src \
+      crates/hermes-bus/src \
+      crates/hermes-cli/src \
+      crates/hermes-config/src \
+      crates/hermes-core/src \
+      crates/hermes-cron/src \
+      crates/hermes-environments/src \
+      crates/hermes-eval/src \
+      crates/hermes-gateway/src \
+      crates/hermes-intelligence/src \
+      crates/hermes-mcp/src \
+      crates/hermes-parity-tests/src \
+      crates/hermes-server/src \
+      crates/hermes-skills/src \
+      crates/hermes-telemetry/src \
+      crates/hermes-tools/src \
+      crates/hermes-transport/src \
+    && for crate in crates/*/; do \
+         name="$(basename "$crate")"; \
+         touch "${crate}src/lib.rs"; \
+         if [ "$name" = "hermes-cli" ] || [ "$name" = "hermes-server" ]; then \
+           echo "fn main() {}" > "${crate}src/main.rs"; \
+         fi; \
+       done
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release -p hermes-cli 2>/dev/null; true
 
 # ----- Build stage -----
-FROM chef AS builder
+FROM rust:1.86-bookworm AS builder
 ARG CARGO_NET_RETRY=3
-
-COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
-RUN cargo build --release -p hermes-cli \
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release -p hermes-cli \
     && strip /app/target/release/hermes
 
 # ----- Runtime stage -----

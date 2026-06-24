@@ -1,5 +1,5 @@
 # ----- Dependency cache stage -----
-FROM rust:1.86-bookworm AS deps
+FROM rust:1-bookworm AS deps
 ARG CARGO_NET_RETRY=3
 WORKDIR /app
 
@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release -p hermes-cli 2>/dev/null; true
 
 # ----- Build stage -----
-FROM rust:1.86-bookworm AS builder
+FROM rust:1-bookworm AS builder
 ARG CARGO_NET_RETRY=3
 WORKDIR /app
 

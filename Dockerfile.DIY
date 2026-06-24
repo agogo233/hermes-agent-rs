@@ -49,7 +49,8 @@ COPY crates crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release -p hermes-cli \
-    && strip /app/target/release/hermes
+    && cp target/release/hermes /app/hermes \
+    && strip /app/hermes
 
 # ----- Runtime stage -----
 FROM debian:bookworm-slim
@@ -61,7 +62,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/bash hermes
 
-COPY --from=builder /app/target/release/hermes /usr/local/bin/hermes
+COPY --from=builder /app/hermes /usr/local/bin/hermes
 
 LABEL org.opencontainers.image.source="https://github.com/nousresearch/hermes-engine" \
       org.opencontainers.image.description="Hermes Agent - AI agent runtime" \
